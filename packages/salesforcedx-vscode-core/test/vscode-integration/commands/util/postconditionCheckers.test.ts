@@ -12,6 +12,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import { join } from 'path';
 import { sandbox, SinonStub } from 'sinon';
+import { channelService } from '../../../../src/channels';
 import {
   ConflictDetectionChecker,
   ConflictDetectionMessages,
@@ -293,11 +294,16 @@ describe('Postcondition Checkers', () => {
     let modalStub: SinonStub;
     let settingsStub: SinonStub;
     let detectorStub: SinonStub;
+    let appendLineStub: SinonStub;
+    let channelOutput: string[] = [];
 
     beforeEach(() => {
+      channelOutput = [];
       modalStub = env.stub(notificationService, 'showWarningModal');
       settingsStub = env.stub(sfdxCoreSettings, 'getConflictDetectionEnabled');
       detectorStub = env.stub(conflictDetector, 'checkForConflicts');
+      appendLineStub = env.stub(channelService, 'appendLine');
+      appendLineStub.callsFake(line => channelOutput.push(line));
     });
 
     afterEach(() => env.restore());
@@ -366,6 +372,7 @@ describe('Postcondition Checkers', () => {
 
       const response = await postChecker.check(validInput);
       expect(response.type).to.equal('CONTINUE');
+      expect(appendLineStub.notCalled).to.equal(true);
     });
 
     it('Should post a warning and return CancelResponse when conflicts are detected and cancelled', async () => {
@@ -374,7 +381,10 @@ describe('Postcondition Checkers', () => {
       env.stub(postChecker, 'getDefaultUsernameOrAlias').returns('MyAlias');
       env.stub(postChecker, 'getDefaultPackageDir').returns('force-app');
       detectorStub.returns({
-        different: new Set<string>('MyClass.cls')
+        different: new Set<string>([
+          'force-app/main/default/objects/Property__c/fields/Broker__c.field-meta.xml',
+          'force-app/main/default/aura/auraPropertySummary/auraPropertySummaryController.js'
+        ])
       } as DirectoryDiffResults);
       modalStub.returns('Cancel');
 
@@ -383,6 +393,12 @@ describe('Postcondition Checkers', () => {
 
       expect(modalStub.firstCall.args.slice(1)).to.eql([
         nls.localize('conflict_detect_override')
+      ]);
+
+      expect(channelOutput).to.include.members([
+        nls.localize('conflict_detect_conflict_header'),
+        'force-app/main/default/objects/Property__c/fields/Broker__c.field-meta.xml',
+        'force-app/main/default/aura/auraPropertySummary/auraPropertySummaryController.js'
       ]);
     });
 
