@@ -190,7 +190,7 @@ export class ConflictDetector {
 
     // 6: cleanup temp directory
     try {
-      shell.rm('-rf', projectMetadataTempPath);
+      // shell.rm('-rf', projectMetadataTempPath);
     } catch (error) {
       // Failed cleanup should not terminate the service
       console.error(error);
