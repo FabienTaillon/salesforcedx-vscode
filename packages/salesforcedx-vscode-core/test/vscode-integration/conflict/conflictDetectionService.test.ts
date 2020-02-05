@@ -133,7 +133,7 @@ describe('Conflict Detection Service Execution', () => {
     const results = await executor.checkForConflicts(input);
     expect(executeCommandSpy.callCount).to.equal(2);
     expect(results.different).to.have.keys([
-      'main/default/classes/HandlerCostCenter.cls'
+      path.join('main', 'default', 'classes', 'HandlerCostCenter.cls')
     ]);
 
     // verify temp file cleanup

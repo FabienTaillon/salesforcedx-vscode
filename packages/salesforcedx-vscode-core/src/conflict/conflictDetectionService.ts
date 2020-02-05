@@ -124,125 +124,116 @@ export class ConflictDetector {
       projectPath,
       this.relativeMetdataTempPath
     );
+
+    // 1: create the shadow directory
     const retrievePackageXmlPath = path.join(
       projectPath,
       this.relativePackageXmlPath
     );
-    const remoteSourcePath: string = path.join(
-      projectPath,
-      this.relativeConvertedPath
-    );
-    const unpackagedZipFile = path.join(
-      projectMetadataTempPath,
-      'unpackaged.zip'
-    );
-    const localSourcePath: string = path.join(projectPath, data.packageDir);
 
-    // 1: create the shadow directory
     try {
       shell.mkdir('-p', projectMetadataTempPath);
       shell.cp(data.manifest, retrievePackageXmlPath);
     } catch (error) {
-      console.error(error);
-      channelService.appendLine(
-        nls.localize('error_creating_packagexml', error.toString())
-      );
-      notificationService.showErrorMessage(
-        nls.localize('error_creating_packagexml', error.toString())
-      );
+      this.reportError('error_creating_packagexml', error);
       return Promise.reject();
     }
 
     // 2: retrieve unmanaged org source to the shadow directory
     await this.executeCommand(
       this.buildRetrieveOrgSourceCommand(data),
-      { cwd: projectPath },
+      projectPath,
       cancellationTokenSource,
       cancellationToken
     );
 
     // 3: unzip retrieved source
+    const unpackagedZipFile = path.join(
+      projectMetadataTempPath,
+      'unpackaged.zip'
+    );
+
     try {
       const zip = new AdmZip(unpackagedZipFile);
       zip.extractAllTo(projectMetadataTempPath, true);
     } catch (error) {
-      console.error(error);
-      channelService.appendLine(
-        nls.localize('error_extracting_org_source', error.toString())
-      );
-      notificationService.showErrorMessage(
-        nls.localize('error_extracting_org_source', error.toString())
-      );
+      this.reportError('error_extracting_org_source', error);
       return Promise.reject();
     }
 
     // 4: convert org source to decomposed (source) format
     await this.executeCommand(
       this.buildMetadataApiConvertOrgSourceCommand(data),
-      { cwd: projectPath },
+      projectPath,
       cancellationTokenSource,
       cancellationToken
     );
 
     // 5: diff project directory (local) and retrieved directory (remote)
     // Assume there are consistent subdirs from each root i.e. 'main/default'
+    const localSourcePath: string = path.join(projectPath, data.packageDir);
+    const remoteSourcePath: string = path.join(
+      projectPath,
+      this.relativeConvertedPath
+    );
     const diffs = this.differ.diff(localSourcePath, remoteSourcePath);
 
     // 6: cleanup temp directory
     try {
-      // shell.rm('-rf', projectMetadataTempPath);
+      shell.rm('-rf', projectMetadataTempPath);
     } catch (error) {
       // Failed cleanup should not terminate the service
-      console.error(error);
-      channelService.appendLine(
-        nls.localize('error_cleanup_temp_files', error.toString())
-      );
-      notificationService.showErrorMessage(
-        nls.localize('error_cleanup_temp_files', error.toString())
-      );
+      this.reportError('error_cleanup_temp_files', error);
     }
 
     return diffs;
   }
 
-  public logMetric(
-    logName: string | undefined,
-    executionTime: [number, number],
-    additionalData?: any
-  ) {
-    telemetryService.sendCommandEvent(logName, executionTime, additionalData);
-  }
-
   public async executeCommand(
     command: Command,
-    options: SpawnOptions,
+    projectPath: string,
     cancellationTokenSource: vscode.CancellationTokenSource,
     cancellationToken: vscode.CancellationToken
   ): Promise<string> {
     const startTime = process.hrtime();
-    const execution = new CliCommandExecutor(command, options, true).execute(
-      cancellationToken
-    );
+    const execution = new CliCommandExecutor(
+      command,
+      { cwd: projectPath, env: { SFDX_JSON_TO_STDOUT: 'true' } },
+      true
+    ).execute(cancellationToken);
 
     const result = new CommandOutput().getCmdResult(execution);
-    this.attachExecution(execution, cancellationTokenSource);
+    this.attachExecution(execution, cancellationTokenSource, cancellationToken);
     execution.processExitSubject.subscribe(() => {
-      this.logMetric(execution.command.logName, startTime);
+      telemetryService.sendCommandEvent(execution.command.logName, startTime);
     });
     return result;
   }
 
   protected attachExecution(
     execution: CommandExecution,
-    cancellationTokenSource: vscode.CancellationTokenSource
+    cancellationTokenSource: vscode.CancellationTokenSource,
+    cancellationToken: vscode.CancellationToken
   ) {
     channelService.streamCommandOutput(execution);
     channelService.showChannelOutput();
-    notificationService.reportExecutionError(
-      execution.command.toString(),
-      (execution.stderrSubject as any) as Observable<Error | undefined>
+    notificationService.reportCommandExecutionStatus(
+      execution,
+      cancellationToken
     );
     ProgressNotification.show(execution, cancellationTokenSource);
     taskViewService.addCommandExecution(execution, cancellationTokenSource);
+  }
+
+  private reportError(messageKey: string, error: Error) {
+    console.error(error);
+    channelService.appendLine(nls.localize(messageKey, error.toString()));
+    notificationService.showErrorMessage(
+      nls.localize(messageKey, error.toString())
+    );
+    telemetryService.sendException(
+      'ConflictDetectionException',
+      error.toString()
+    );
   }
 }

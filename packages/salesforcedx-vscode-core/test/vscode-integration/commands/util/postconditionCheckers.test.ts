@@ -345,20 +345,30 @@ describe('Postcondition Checkers', () => {
 
     it('Should return CancelResponse when a username is not defined.', async () => {
       const postChecker = new ConflictDetectionChecker(emptyMessages);
-      env.stub(postChecker, 'getDefaultUsernameOrAlias').returns(undefined);
+      const usernameStub = env
+        .stub(postChecker, 'getDefaultUsernameOrAlias')
+        .returns(undefined);
       settingsStub.returns(true);
 
       const response = await postChecker.check(validInput);
       expect(response.type).to.equal('CANCEL');
+      expect(usernameStub.calledOnce).to.equal(true);
     });
 
     it('Should return CancelResponse when a default package directory is not defined.', async () => {
       const postChecker = new ConflictDetectionChecker(emptyMessages);
-      env.stub(postChecker, 'getDefaultPackageDir').returns(undefined);
+      const usernameStub = env
+        .stub(postChecker, 'getDefaultUsernameOrAlias')
+        .returns('MyAlias');
+      const packageDirStub = env
+        .stub(postChecker, 'getDefaultPackageDir')
+        .returns(undefined);
       settingsStub.returns(true);
 
       const response = await postChecker.check(validInput);
       expect(response.type).to.equal('CANCEL');
+      expect(usernameStub.calledOnce).to.equal(true);
+      expect(packageDirStub.calledOnce).to.equal(true);
     });
 
     it('Should return ContinueResponse when no conflicts are detected', async () => {
@@ -378,8 +388,12 @@ describe('Postcondition Checkers', () => {
     it('Should post a warning and return CancelResponse when conflicts are detected and cancelled', async () => {
       const postChecker = new ConflictDetectionChecker(retrieveMessages);
       settingsStub.returns(true);
-      env.stub(postChecker, 'getDefaultUsernameOrAlias').returns('MyAlias');
-      env.stub(postChecker, 'getDefaultPackageDir').returns('force-app');
+      const usernameStub = env
+        .stub(postChecker, 'getDefaultUsernameOrAlias')
+        .returns('MyAlias');
+      const packageDirStub = env
+        .stub(postChecker, 'getDefaultPackageDir')
+        .returns('force-app');
       detectorStub.returns({
         different: new Set<string>([
           'force-app/main/default/objects/Property__c/fields/Broker__c.field-meta.xml',
@@ -400,6 +414,9 @@ describe('Postcondition Checkers', () => {
         'force-app/main/default/objects/Property__c/fields/Broker__c.field-meta.xml',
         'force-app/main/default/aura/auraPropertySummary/auraPropertySummaryController.js'
       ]);
+
+      expect(usernameStub.calledOnce).to.equal(true);
+      expect(packageDirStub.calledOnce).to.equal(true);
     });
 
     it('Should post a warning and return ContinueResponse when conflicts are detected and overwritten', async () => {
